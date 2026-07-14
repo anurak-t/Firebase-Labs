@@ -3,10 +3,19 @@
     ".read": false,
     ".write": false,
     "status": {
+      ".read": "auth != null",
       "$uid": {
-        ".read": "auth != null",
         ".write": "auth != null && auth.uid === $uid",
         ".validate": "newData.hasChildren(['state', 'lastChanged', 'displayName', 'photoURL']) && newData.child('state').isString() && (newData.child('state').val() === 'online' || newData.child('state').val() === 'offline') && newData.child('lastChanged').isNumber() && newData.child('displayName').isString() && newData.child('photoURL').isString()"
+      }
+    },
+    "userChats": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$chatId": {
+          ".write": "auth != null && root.child('chats').child($chatId).child('members').child(auth.uid).val() === true && root.child('chats').child($chatId).child('members').child($uid).val() === true",
+          ".validate": "newData.hasChildren(['peerUid', 'peerName', 'peerPhotoURL', 'lastMessage', 'lastSenderId', 'updatedAt', 'unread']) && newData.child('peerUid').isString() && newData.child('peerName').isString() && newData.child('peerPhotoURL').isString() && newData.child('lastMessage').isString() && newData.child('lastMessage').val().length <= 160 && newData.child('lastSenderId').isString() && newData.child('updatedAt').isNumber() && newData.child('unread').isBoolean()"
+        }
       }
     },
     "chats": {

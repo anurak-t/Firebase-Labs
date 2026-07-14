@@ -1,4 +1,4 @@
-# Firebase NoSQL Mini Social Lab
+# Lab Firebase NoSQL Mini Social Network
 
 เว็บ mini social network สำหรับรายวิชา **Database Modernization** หัวข้อ **Firebase NoSQL** ใช้ HTML, CSS และ JavaScript ธรรมดาเท่านั้น เพื่อให้นักศึกษาเห็นการทำงานของ Firebase Auth, Firestore, Realtime Database, Security Rules และ Hosting ในโปรเจกต์เดียว
 

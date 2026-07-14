@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Circle - Private Social Network</title>
+    <title>Private Social</title>
     <meta
       name="description"
       content="A minimal private social network for posts, people, presence, and direct messages."
@@ -14,50 +14,26 @@
   <body>
     <div id="config-warning" class="config-warning" hidden>
       <strong>ยังไม่ได้ตั้งค่า Firebase</strong>
-      <span>คัดลอก <code>public/firebase-config.example.js</code> เป็น <code>public/firebase-config.js</code> แล้วใส่ config จาก Firebase Console</span>
+      <span
+        >คัดลอก <code>public/firebase-config.example.js</code> เป็น
+        <code>public/firebase-config.js</code> แล้วใส่ config จาก Firebase
+        Console</span
+      >
     </div>
+    <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
 
     <section id="login-view" class="login-view">
-      <div class="login-preview" aria-hidden="true">
-        <div class="preview-window">
-          <div class="preview-top">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
-          <div class="preview-post">
-            <span class="mini-avatar"></span>
-            <div>
-              <strong>Morning circle</strong>
-              <p>แชร์เรื่องเล็ก ๆ กับคนใกล้ตัว</p>
-            </div>
-          </div>
-          <div class="preview-lines">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
-          <div class="preview-chat">
-            <span>เจอกันเย็นนี้ไหม?</span>
-            <b>ได้เลย</b>
-          </div>
-        </div>
-        <div class="preview-note">
-          <strong>private by default</strong>
-          <span>posts · people · messages</span>
-        </div>
-      </div>
-
       <main class="login-panel">
-        <p class="eyebrow">Circle</p>
-        <h1>พื้นที่ส่วนตัวสำหรับคนที่คุณเลือกคุยด้วย</h1>
+        <div class="login-brand" aria-hidden="true">
+          <span></span>
+        </div>
+        <h1>Welcome back</h1>
         <p class="login-copy">
-          โพสต์เรื่องราวสั้น ๆ เห็นคนที่ออนไลน์ และคุยแบบ direct message
-          ในหน้าตาเรียบง่ายที่พร้อมใช้งาน
+          เข้าสู่ระบบเพื่อเชื่อมต่อกับคนในเครือข่ายของคุณ
         </p>
         <button id="google-login" class="primary-action" type="button">
           <span class="google-mark">G</span>
-          Continue with Google
+          เข้าสู่ระบบด้วย Google
         </button>
         <p id="login-error" class="form-error" role="alert"></p>
       </main>
@@ -65,21 +41,24 @@
 
     <div id="app-view" class="app-shell" hidden>
       <header class="topbar">
-        <div class="brand">
-          <span class="brand-mark">c</span>
-          <div>
-            <strong>Circle</strong>
-            <small>private network</small>
-          </div>
+        <div class="brand" aria-label="Private Social">
+          <span class="brand-mark" aria-hidden="true">
+            <span></span>
+          </span>
         </div>
         <label class="search-box">
-          <span>ค้นหา</span>
-          <input id="people-search" type="search" placeholder="ค้นหาคนใน Circle" />
+          <input id="people-search" type="search" placeholder="ค้นหาเพื่อน" />
         </label>
         <div class="topbar-user">
           <img id="topbar-photo" class="avatar" alt="" />
           <span id="topbar-name"></span>
-          <button id="logout-button" class="icon-button text-button" type="button">ออกจากระบบ</button>
+          <button
+            id="logout-button"
+            class="icon-button text-button"
+            type="button"
+          >
+            ออกจากระบบ
+          </button>
         </div>
       </header>
 
@@ -90,14 +69,30 @@
             <h2 id="profile-name"></h2>
             <p id="profile-email"></p>
             <span id="presence-pill" class="presence-pill">online</span>
+            <div class="profile-stats" aria-label="profile stats">
+              <span>
+                <strong>Private</strong>
+                <small>Space</small>
+              </span>
+              <span>
+                <strong>Live</strong>
+                <small>Status</small>
+              </span>
+            </div>
           </section>
         </aside>
 
         <section class="feed-column">
           <form id="post-form" class="composer">
+            <div class="composer-kicker">แชร์เรื่องราวของคุณ</div>
             <div class="composer-row">
               <img id="composer-photo" class="avatar" alt="" />
-              <textarea id="post-text" maxlength="1000" placeholder="แชร์อะไรกับ Circle ของคุณ..." required></textarea>
+              <textarea
+                id="post-text"
+                maxlength="1000"
+                placeholder="แชร์อะไรกับเพื่อนของคุณ..."
+                required
+              ></textarea>
             </div>
             <div class="composer-footer">
               <span id="post-count">0/1000</span>
@@ -107,10 +102,15 @@
 
           <section class="feed-tools">
             <div>
-              <h2>Home</h2>
               <p>เรื่องราวล่าสุดจากคนในวงของคุณ</p>
             </div>
-            <button id="refresh-feed" class="icon-button text-button" type="button">Refresh</button>
+            <button
+              id="refresh-feed"
+              class="icon-button text-button"
+              type="button"
+            >
+              Refresh
+            </button>
           </section>
 
           <div id="feed" class="feed"></div>
@@ -118,25 +118,40 @@
 
         <aside class="sidebar right-sidebar">
           <section class="people-card">
-            <h3>People</h3>
+            <h3>Friends</h3>
             <div id="people-list" class="people-list"></div>
           </section>
 
-          <section class="chat-card-panel">
+          <section class="chat-card-panel is-hidden" aria-live="polite">
             <div class="chat-header">
               <div>
                 <h3 id="chat-title">Messages</h3>
                 <p id="chat-subtitle">เลือกคนเพื่อเริ่มคุย</p>
               </div>
-              <button id="close-chat" class="icon-button" type="button" aria-label="ปิดแชต">×</button>
+              <button
+                id="close-chat"
+                class="icon-button"
+                type="button"
+                aria-label="ปิดแชต"
+              >
+                ×
+              </button>
             </div>
             <div id="chat-messages" class="chat-messages">
               <p class="empty-state">เลือกคนจากรายชื่อเพื่อเริ่มคุย</p>
             </div>
             <p id="typing-status" class="typing-status"></p>
             <form id="chat-form" class="chat-form">
-              <input id="chat-input" type="text" maxlength="500" placeholder="พิมพ์ข้อความ..." disabled />
-              <button class="primary-action small" type="submit" disabled>ส่ง</button>
+              <input
+                id="chat-input"
+                type="text"
+                maxlength="500"
+                placeholder="พิมพ์ข้อความ..."
+                disabled
+              />
+              <button class="primary-action small" type="submit" disabled>
+                ส่ง
+              </button>
             </form>
           </section>
         </aside>
@@ -151,7 +166,14 @@
             <strong class="post-author"></strong>
             <time class="post-time"></time>
           </div>
-          <button class="icon-button delete-post" type="button" hidden aria-label="ลบโพสต์">×</button>
+          <button
+            class="icon-button delete-post"
+            type="button"
+            hidden
+            aria-label="ลบโพสต์"
+          >
+            ×
+          </button>
         </header>
         <p class="post-text"></p>
         <div class="post-actions">
@@ -160,7 +182,12 @@
         </div>
         <div class="comments"></div>
         <form class="comment-form">
-          <input type="text" maxlength="500" placeholder="เขียนความคิดเห็น..." required />
+          <input
+            type="text"
+            maxlength="500"
+            placeholder="เขียนความคิดเห็น..."
+            required
+          />
           <button type="submit">ส่ง</button>
         </form>
       </article>

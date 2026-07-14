@@ -27,6 +27,7 @@ import {
   getDatabase,
   child,
   connectDatabaseEmulator,
+  get,
   off,
   onDisconnect,
   onValue,
@@ -48,6 +49,9 @@ const state = {
   users: new Map(),
   statuses: new Map(),
   postListeners: [],
+  inbox: new Map(),
+  seenChatUpdates: new Map(),
+  inboxPrimed: false,
   activeChat: null,
   chatMessagesRef: null,
   typingRef: null,
@@ -55,7 +59,8 @@ const state = {
   unsubscribeUsers: null,
   unsubscribePosts: null,
   unsubscribeConnection: null,
-  unsubscribeStatuses: null
+  unsubscribeStatuses: null,
+  unsubscribeInbox: null
 };
 
 const els = {
@@ -72,6 +77,7 @@ const els = {
   profileEmail: $("#profile-email"),
   composerPhoto: $("#composer-photo"),
   presencePill: $("#presence-pill"),
+  toastStack: $("#toast-stack"),
   postForm: $("#post-form"),
   postText: $("#post-text"),
   postCount: $("#post-count"),
@@ -79,6 +85,7 @@ const els = {
   refreshFeed: $("#refresh-feed"),
   peopleList: $("#people-list"),
   peopleSearch: $("#people-search"),
+  chatPanel: $(".chat-card-panel"),
   chatTitle: $("#chat-title"),
   chatSubtitle: $("#chat-subtitle"),
   chatMessages: $("#chat-messages"),
@@ -144,6 +151,9 @@ function bindStaticEvents() {
   els.chatInput.addEventListener("input", handleTyping);
   els.closeChat.addEventListener("click", closeChat);
   els.refreshFeed.addEventListener("click", subscribePosts);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) document.title = "Private Social";
+  });
 }
 
 async function signInWithGoogle() {
@@ -179,12 +189,13 @@ async function handleAuthState(user) {
   setupPresence(user);
   subscribeUsers();
   subscribeStatuses();
+  subscribeInbox();
   subscribePosts();
 }
 
 function paintCurrentUser(user) {
   const photo = user.photoURL || avatarFallback(user.displayName);
-  const name = user.displayName || "Circle Member";
+  const name = user.displayName || "Member";
 
   els.topbarPhoto.src = photo;
   els.profilePhoto.src = photo;
@@ -199,7 +210,7 @@ async function ensureUserProfile(user) {
   const snapshot = await getDoc(userRef);
   const profile = {
     uid: user.uid,
-    displayName: user.displayName || "Circle Member",
+    displayName: user.displayName || "Member",
     email: user.email || "",
     photoURL: user.photoURL || avatarFallback(user.displayName),
     updatedAt: serverTimestamp()
@@ -222,7 +233,7 @@ function setupPresence(user) {
   const online = {
     state: "online",
     lastChanged: rtdbServerTimestamp(),
-    displayName: user.displayName || "Circle Member",
+    displayName: user.displayName || "Member",
     photoURL: user.photoURL || avatarFallback(user.displayName)
   };
   const offline = {
@@ -233,8 +244,20 @@ function setupPresence(user) {
 
   state.unsubscribeConnection = onValue(connectedRef, (snapshot) => {
     if (snapshot.val() === false) return;
-    onDisconnect(statusRef).set(offline).then(() => set(statusRef, online));
+    onDisconnect(statusRef)
+      .set(offline)
+      .then(() => set(statusRef, online))
+      .then(() => paintOwnPresence("online"))
+      .catch((error) => {
+        console.warn("Presence update failed:", error.message);
+        paintOwnPresence("offline");
+      });
   });
+}
+
+function paintOwnPresence(value) {
+  els.presencePill.textContent = value;
+  els.presencePill.classList.toggle("offline", value !== "online");
 }
 
 function subscribeUsers() {
@@ -255,7 +278,41 @@ function subscribeStatuses() {
     state.statuses.clear();
     const statuses = snapshot.val() || {};
     Object.entries(statuses).forEach(([uid, value]) => state.statuses.set(uid, value));
+    paintOwnPresence(state.statuses.get(state.user.uid)?.state || "offline");
     renderPeople();
+  }, (error) => {
+    console.warn("Status listener failed:", error.message);
+    paintOwnPresence("offline");
+  });
+}
+
+function subscribeInbox() {
+  if (state.unsubscribeInbox) state.unsubscribeInbox();
+
+  state.inbox.clear();
+  state.seenChatUpdates.clear();
+  state.inboxPrimed = false;
+
+  state.unsubscribeInbox = onValue(ref(state.rtdb, `userChats/${state.user.uid}`), (snapshot) => {
+    const inbox = snapshot.val() || {};
+
+    Object.entries(inbox).forEach(([chatId, chat]) => {
+      const previousUpdate = state.seenChatUpdates.get(chatId);
+      const isIncoming = chat.lastSenderId && chat.lastSenderId !== state.user.uid;
+      const isActiveChat = state.activeChat?.chatId === chatId;
+
+      if (state.inboxPrimed && isIncoming && chat.unread && !isActiveChat && chat.updatedAt !== previousUpdate) {
+        showChatNotification(chat, chatId);
+      }
+
+      state.seenChatUpdates.set(chatId, chat.updatedAt);
+    });
+
+    state.inbox = new Map(Object.entries(inbox));
+    state.inboxPrimed = true;
+    renderPeople();
+  }, (error) => {
+    console.warn("Inbox listener failed:", error.message);
   });
 }
 
@@ -269,7 +326,7 @@ function subscribePosts() {
     (snapshot) => {
       els.feed.innerHTML = "";
       if (snapshot.empty) {
-        els.feed.innerHTML = `<article class="post empty-state">ยังไม่มีโพสต์ ลองแชร์เรื่องแรกใน Circle ของคุณ</article>`;
+        els.feed.innerHTML = `<article class="post empty-state">ยังไม่มีโพสต์ ลองแชร์เรื่องแรกในพื้นที่นี้</article>`;
         return;
       }
       snapshot.forEach((postDoc) => renderPost(postDoc.id, postDoc.data()));
@@ -291,7 +348,7 @@ async function createPost(event) {
   try {
     await addDoc(collection(state.db, "posts"), {
       authorId: state.user.uid,
-      authorName: state.user.displayName || "Circle Member",
+      authorName: state.user.displayName || "Member",
       authorPhotoURL: state.user.photoURL || avatarFallback(state.user.displayName),
       text,
       visibility: "public",
@@ -317,7 +374,7 @@ function renderPost(postId, post) {
 
   node.dataset.postId = postId;
   node.querySelector(".post-author-photo").src = post.authorPhotoURL || avatarFallback(post.authorName);
-  node.querySelector(".post-author").textContent = post.authorName || "Circle Member";
+  node.querySelector(".post-author").textContent = post.authorName || "Member";
   node.querySelector(".post-time").textContent = formatDate(post.createdAt?.toDate?.());
   node.querySelector(".post-text").textContent = post.text || "";
 
@@ -372,7 +429,7 @@ async function addComment(event, postId) {
 
   await addDoc(collection(state.db, "posts", postId, "comments"), {
     authorId: state.user.uid,
-    authorName: state.user.displayName || "Circle Member",
+    authorName: state.user.displayName || "Member",
     authorPhotoURL: state.user.photoURL || avatarFallback(state.user.displayName),
     text,
     createdAt: serverTimestamp()
@@ -390,7 +447,7 @@ function renderComment(postId, commentId, comment) {
       <p></p>
     </div>
   `;
-  row.querySelector("strong").textContent = comment.authorName || "Circle Member";
+  row.querySelector("strong").textContent = comment.authorName || "Member";
   row.querySelector("p").textContent = comment.text || "";
 
   if (comment.authorId === state.user.uid) {
@@ -421,22 +478,24 @@ function renderPeople() {
 
   els.peopleList.innerHTML = "";
   if (users.length === 0) {
-    els.peopleList.innerHTML = `<p class="empty-state">ยังไม่มีคนอื่นใน Circle นี้</p>`;
+    els.peopleList.innerHTML = `<p class="empty-state">ยังไม่มีเพื่อนในรายการนี้</p>`;
     return;
   }
 
   users.forEach(([uid, user]) => {
     const status = state.statuses.get(uid);
     const isOnline = status?.state === "online";
+    const inboxChat = getInboxChatByPeer(uid);
+    const hasUnread = inboxChat?.unread && inboxChat.lastSenderId !== state.user.uid;
     const button = document.createElement("button");
-    button.className = `person-button ${state.activeChat?.peerUid === uid ? "active" : ""}`;
+    button.className = `person-button ${state.activeChat?.peerUid === uid ? "active" : ""} ${hasUnread ? "unread" : ""}`;
     button.type = "button";
     button.innerHTML = `
       <img class="avatar" alt="" src="${escapeAttr(user.photoURL || avatarFallback(user.displayName))}" />
       <span><strong></strong><span>${isOnline ? "online" : "offline"}</span></span>
-      <i class="status-dot ${isOnline ? "online" : ""}"></i>
+      <i class="${hasUnread ? "unread-dot" : `status-dot ${isOnline ? "online" : ""}`}"></i>
     `;
-    button.querySelector("strong").textContent = user.displayName || "Circle Member";
+    button.querySelector("strong").textContent = user.displayName || "Member";
     button.addEventListener("click", () => openChat(uid, user));
     els.peopleList.appendChild(button);
   });
@@ -447,28 +506,46 @@ async function openChat(peerUid, peer) {
   closeChatListeners();
 
   const chatId = buildChatId(state.user.uid, peerUid);
+  const chatRef = ref(state.rtdb, `chats/${chatId}`);
+  const chatSnapshot = await get(chatRef);
   const now = Date.now();
   const currentInfo = {
-    displayName: state.user.displayName || "Circle Member",
+    displayName: state.user.displayName || "Member",
     photoURL: state.user.photoURL || avatarFallback(state.user.displayName)
   };
   const peerInfo = {
-    displayName: peer.displayName || "Circle Member",
+    displayName: peer.displayName || "Member",
     photoURL: peer.photoURL || avatarFallback(peer.displayName)
   };
 
-  await update(ref(state.rtdb, `chats/${chatId}`), {
+  const chatUpdate = {
     [`members/${state.user.uid}`]: true,
     [`members/${peerUid}`]: true,
     [`memberInfo/${state.user.uid}`]: currentInfo,
     [`memberInfo/${peerUid}`]: peerInfo,
-    createdAt: now,
-    updatedAt: now,
-    lastMessage: "",
-    lastSenderId: ""
-  });
+    updatedAt: now
+  };
+
+  if (!chatSnapshot.exists()) {
+    chatUpdate.createdAt = now;
+    chatUpdate.lastMessage = "";
+    chatUpdate.lastSenderId = "";
+  }
+
+  await update(chatRef, chatUpdate);
 
   state.activeChat = { chatId, peerUid, peer };
+  const inboxChat = state.inbox.get(chatId);
+  await writeUserChatIndex(
+    chatId,
+    peerUid,
+    peerInfo,
+    inboxChat?.lastMessage || "",
+    inboxChat?.lastSenderId || "",
+    inboxChat?.updatedAt || now,
+    false
+  );
+  els.chatPanel.classList.remove("is-hidden");
   els.chatTitle.textContent = peerInfo.displayName;
   els.chatSubtitle.textContent = "Direct message";
   els.chatInput.disabled = false;
@@ -523,7 +600,7 @@ async function sendChatMessage(event) {
   const now = Date.now();
   const message = {
     senderId: state.user.uid,
-    senderName: state.user.displayName || "Circle Member",
+    senderName: state.user.displayName || "Member",
     senderPhotoURL: state.user.photoURL || avatarFallback(state.user.displayName),
     text,
     createdAt: now
@@ -537,6 +614,90 @@ async function sendChatMessage(event) {
     lastSenderId: state.user.uid,
     updatedAt: now
   });
+  await writeChatIndexes(text.slice(0, 160), now);
+}
+
+function getInboxChatByPeer(peerUid) {
+  return [...state.inbox.entries()]
+    .map(([chatId, chat]) => ({ chatId, ...chat }))
+    .find((chat) => chat.peerUid === peerUid);
+}
+
+async function writeUserChatIndex(chatId, peerUid, peerInfo, lastMessage, lastSenderId, updatedAt, unread) {
+  await set(ref(state.rtdb, `userChats/${state.user.uid}/${chatId}`), {
+    peerUid,
+    peerName: peerInfo.displayName || "Member",
+    peerPhotoURL: peerInfo.photoURL || avatarFallback(peerInfo.displayName),
+    lastMessage,
+    lastSenderId,
+    updatedAt,
+    unread
+  });
+}
+
+async function writeChatIndexes(lastMessage, updatedAt) {
+  const peerUid = state.activeChat.peerUid;
+  const peer = state.activeChat.peer || {};
+  const currentInfo = {
+    displayName: state.user.displayName || "Member",
+    photoURL: state.user.photoURL || avatarFallback(state.user.displayName)
+  };
+  const peerInfo = {
+    displayName: peer.displayName || "Member",
+    photoURL: peer.photoURL || avatarFallback(peer.displayName)
+  };
+  const updates = {
+    [`userChats/${state.user.uid}/${state.activeChat.chatId}`]: {
+      peerUid,
+      peerName: peerInfo.displayName,
+      peerPhotoURL: peerInfo.photoURL,
+      lastMessage,
+      lastSenderId: state.user.uid,
+      updatedAt,
+      unread: false
+    },
+    [`userChats/${peerUid}/${state.activeChat.chatId}`]: {
+      peerUid: state.user.uid,
+      peerName: currentInfo.displayName,
+      peerPhotoURL: currentInfo.photoURL,
+      lastMessage,
+      lastSenderId: state.user.uid,
+      updatedAt,
+      unread: true
+    }
+  };
+
+  await update(ref(state.rtdb), updates);
+}
+
+function showChatNotification(chat, chatId) {
+  const toast = document.createElement("button");
+  toast.className = "chat-toast";
+  toast.type = "button";
+  toast.innerHTML = `
+    <img class="avatar" alt="" src="${escapeAttr(chat.peerPhotoURL || avatarFallback(chat.peerName))}" />
+    <span>
+      <strong></strong>
+      <small></small>
+    </span>
+  `;
+  toast.querySelector("strong").textContent = chat.peerName || "ข้อความใหม่";
+  toast.querySelector("small").textContent = chat.lastMessage || "ส่งข้อความถึงคุณ";
+  toast.addEventListener("click", () => {
+    const peer = state.users.get(chat.peerUid) || {
+      displayName: chat.peerName,
+      photoURL: chat.peerPhotoURL
+    };
+    openChat(chat.peerUid, peer);
+    toast.remove();
+  });
+
+  els.toastStack.appendChild(toast);
+  setTimeout(() => toast.remove(), 6000);
+
+  if (document.hidden) {
+    document.title = `ข้อความใหม่จาก ${chat.peerName || "เพื่อน"}`;
+  }
 }
 
 function handleTyping() {
@@ -551,6 +712,7 @@ function handleTyping() {
 function closeChat() {
   closeChatListeners();
   state.activeChat = null;
+  els.chatPanel.classList.add("is-hidden");
   els.chatTitle.textContent = "Messages";
   els.chatSubtitle.textContent = "เลือกคนเพื่อเริ่มคุย";
   els.chatMessages.innerHTML = `<p class="empty-state">เลือกคนจากรายชื่อเพื่อเริ่มคุย</p>`;
@@ -576,10 +738,15 @@ function cleanupRealtime() {
   if (state.unsubscribePosts) state.unsubscribePosts();
   if (state.unsubscribeConnection) state.unsubscribeConnection();
   if (state.unsubscribeStatuses) state.unsubscribeStatuses();
+  if (state.unsubscribeInbox) state.unsubscribeInbox();
   clearPostListeners();
   closeChatListeners();
+  els.chatPanel.classList.add("is-hidden");
   state.users.clear();
   state.statuses.clear();
+  state.inbox.clear();
+  state.seenChatUpdates.clear();
+  state.inboxPrimed = false;
 }
 
 function clearPostListeners() {
@@ -599,7 +766,7 @@ function formatDate(date) {
   }).format(date);
 }
 
-function avatarFallback(name = "Circle Member") {
+function avatarFallback(name = "Member") {
   const label = encodeURIComponent(name.trim().slice(0, 2) || "FS");
   return `https://ui-avatars.com/api/?name=${label}&background=1877f2&color=ffffff&bold=true`;
 }
